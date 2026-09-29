@@ -45,9 +45,9 @@ Put `Salon Customers Database.xlsx` in the same folder as `send_whatsapp.py`. Ev
 
 | Column | Example | Notes |
 |---|---|---|
-| `First_Name` | Riya | required for a row to be sent |
-| `Last_Name` | Sen | optional; `{{1}}` is `First_Name Last_Name` |
-| `Mobile_1` | 9876543210 | 10 digits; `+91` is added |
+| `First_Name` | FirstName | required for a row to be sent |
+| `Last_Name` | SecondName | optional; `{{1}}` is `First_Name Last_Name` |
+| `Mobile_1` | 1234567890 | 10 digits; `+91` is added |
 | `Mobile_2` | | used if `Mobile_1` is blank or invalid |
 | `Birth_Day`, `Birth_Month` | 29, September | month as a name (`September` or `Sep`) |
 | `Anniversary_Day`, `Anniversary_Month` | 1, October | may be blank |
