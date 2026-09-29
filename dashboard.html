@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Today's WhatsApp Sends</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1f2328; --muted: #656d76; --line: #e3e6ea;
+    --green-bg: #dcf5e3; --green: #146c2e;
+    --red-bg: #fde2e1; --red: #a4161a;
+    --gray-bg: #eceef1; --gray: #4b525a;
+    --accent: #1a7f37;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --card: #171b21; --text: #e6e8eb; --muted: #9aa3ad; --line: #2a3038;
+      --green-bg: #173d24; --green: #7ee2a0;
+      --red-bg: #4a1c1d; --red: #ffaaa8;
+      --gray-bg: #2a3038; --gray: #c3c9d0;
+      --accent: #2ea043;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 880px; margin: 0 auto; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 22px; margin: 0; }
+  .sub { color: var(--muted); margin: 4px 0 16px; }
+  button {
+    font: inherit; padding: 8px 16px; border: 0; border-radius: 6px; cursor: pointer;
+    background: var(--accent); color: #fff;
+  }
+  .controls { display: flex; align-items: center; gap: 12px; }
+  .updated { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .updated.flash { animation: flash 1.2s ease-out; }
+  @keyframes flash { from { color: var(--accent); } to { color: var(--muted); } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-size: 13px; color: var(--muted); font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
+  td.name { white-space: normal; }
+  .status { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+  .status.sent { background: var(--green-bg); color: var(--green); }
+  .status.failed { background: var(--red-bg); color: var(--red); }
+  .status.other { background: var(--gray-bg); color: var(--gray); }
+  .message { padding: 32px 16px; text-align: center; color: var(--muted); }
+  .message.error { color: var(--red); text-align: left; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>WhatsApp messages today</h1>
+    <div class="controls">
+      <span class="updated" id="updated" aria-live="off"></span>
+      <button id="refresh" type="button">Refresh</button>
+    </div>
+  </header>
+  <p class="sub" id="sub">Loading…</p>
+  <div class="card" id="out"></div>
+</main>
+
+<script>
+  const out = document.getElementById("out");
+  const sub = document.getElementById("sub");
+  const button = document.getElementById("refresh");
+  const updated = document.getElementById("updated");
+
+  // Local date as YYYY-MM-DD, the same format (and timezone) the Python script writes.
+  function todayString() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  function el(tag, text, className) {
+    const node = document.createElement(tag);
+    if (text !== undefined) node.textContent = text;
+    if (className) node.className = className;
+    return node;
+  }
+
+  function formatPhone(phone) {
+    return phone ? "+" + String(phone).replace(/^\+/, "") : "";
+  }
+
+  function formatTime(sentAt) {
+    const t = new Date(sentAt);
+    return isNaN(t) ? (sentAt || "") : t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+
+  function showMessage(text, isError) {
+    out.replaceChildren(el("div", text, "message" + (isError ? " error" : "")));
+  }
+
+  function render(entries, today) {
+    const rows = entries.filter(e => e && e.date === today);
+    const sent = rows.filter(e => e.status === "sent").length;
+    sub.textContent = `${today} · ${rows.length} message${rows.length === 1 ? "" : "s"}` +
+      (rows.length ? ` (${sent} sent)` : "");
+
+    if (!rows.length) {
+      showMessage("No messages sent yet today");
+      return;
+    }
+
+    const table = el("table");
+    const headRow = el("tr");
+    ["Name", "Occasion", "Phone", "Status", "Sent at"].forEach(h => headRow.append(el("th", h)));
+    table.append(el("thead"));
+    table.tHead.append(headRow);
+
+    const body = el("tbody");
+    rows.sort((a, b) => String(a.sent_at).localeCompare(String(b.sent_at)));
+    for (const e of rows) {
+      const status = String(e.status || "unknown");
+      const kind = status === "sent" ? "sent" : status === "failed" ? "failed" : "other";
+      const occasion = e.occasion ? e.occasion[0].toUpperCase() + e.occasion.slice(1) : "";
+      const tr = el("tr");
+      tr.append(el("td", e.name || "", "name"), el("td", occasion), el("td", formatPhone(e.phone)));
+      const statusCell = el("td");
+      statusCell.append(el("span", status, "status " + kind));
+      tr.append(statusCell, el("td", formatTime(e.sent_at)));
+      body.append(tr);
+    }
+    table.append(body);
+    out.replaceChildren(table);
+  }
+
+  function markUpdated() {
+    updated.textContent = "Last updated " + new Date().toLocaleTimeString("en-GB", { hour12: false });
+    updated.classList.remove("flash");
+    void updated.offsetWidth;  // restart the fade animation
+    updated.classList.add("flash");
+  }
+
+  // sent_log_data.js (written by send_whatsapp.py next to sent_log.json) sets window.sentLogData.
+  // It's loaded with a <script> tag, which browsers allow on file:// pages, unlike fetch().
+  // Each load swaps in a fresh tag with a new ?t= so the browser can't reuse a cached copy.
+  // Used by the Refresh button and by the timer every REFRESH_SECONDS.
+  const REFRESH_SECONDS = 5;
+  let loadingSince = 0;
+
+  function load() {
+    if (loadingSince && Date.now() - loadingSince < 15000) return;  // previous load still running
+    loadingSince = Date.now();
+    const today = todayString();
+    const old = document.getElementById("sent-log-data");
+    if (old) old.remove();
+    window.sentLogData = undefined;
+
+    const script = document.createElement("script");
+    script.id = "sent-log-data";
+    script.src = "sent_log_data.js?t=" + Date.now();  // avoid a cached copy
+    script.onload = () => {
+      loadingSince = 0;
+      markUpdated();
+      if (!Array.isArray(window.sentLogData)) {
+        sub.textContent = today;
+        showMessage("sent_log_data.js doesn't contain a list of messages.", true);
+        return;
+      }
+      render(window.sentLogData, today);
+    };
+    script.onerror = () => {
+      // The file is created on the first send, so a missing file just means nothing sent yet.
+      loadingSince = 0;
+      markUpdated();
+      sub.textContent = today;
+      showMessage("No messages sent yet today");
+    };
+    document.body.append(script);
+  }
+
+  button.addEventListener("click", load);
+  load();
+  setInterval(load, REFRESH_SECONDS * 1000);
+</script>
+</body>
+</html>

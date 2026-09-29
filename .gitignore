@@ -1,0 +1,9 @@
+.env
+__pycache__/
+sent_log.json
+sent_log.tmp
+send_whatsapp.lock
+sent_log_data.js
+sent_log_data.tmp
+Salon Customers Database.xlsx
+~$*.xlsx
