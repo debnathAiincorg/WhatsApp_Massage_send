@@ -77,8 +77,6 @@ Keep `sent_log.json` during the day: it is the duplicate check. It holds custome
 
 Double-click `dashboard.html` to open it in a browser; no server is needed. It shows today's messages (name, occasion, phone, status, time) from `sent_log_data.js` and re-reads that file every 5 seconds, so it can stay open on a screen. "Last updated" shows when it last checked; the Refresh button checks immediately.
 
-The copy on GitHub Pages can't see those real sends: `sent_log_data.js` stays on the sending computer and is never uploaded, because it holds customer names and numbers. Online, the page shows made-up demo entries from `sample_log_data.js` instead.
-
 ## Change what is sent
 
 - **Offer text:** edit `OFFER_LINE` ({{2}}) at the top of `send_whatsapp.py`. {{1}} is always the customer's name from the Excel file.
