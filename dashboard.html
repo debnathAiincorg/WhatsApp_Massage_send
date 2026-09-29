@@ -30,6 +30,7 @@
   header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   h1 { font-size: 22px; margin: 0; }
   .sub { color: var(--muted); margin: 4px 0 16px; }
+  .demo { background: var(--gray-bg); color: var(--gray); padding: 8px 12px; border-radius: 6px; margin: 12px 0 0; font-size: 14px; }
   button {
     font: inherit; padding: 8px 16px; border: 0; border-radius: 6px; cursor: pointer;
     background: var(--accent); color: #fff;
@@ -61,6 +62,7 @@
       <button id="refresh" type="button">Refresh</button>
     </div>
   </header>
+  <p class="demo" id="demo" hidden>Demo data with made-up names. Real messages appear only when this page is opened on the computer that runs send_whatsapp.py.</p>
   <p class="sub" id="sub">Loading…</p>
   <div class="card" id="out"></div>
 </main>
@@ -142,7 +144,12 @@
   // It's loaded with a <script> tag, which browsers allow on file:// pages, unlike fetch().
   // Each load swaps in a fresh tag with a new ?t= so the browser can't reuse a cached copy.
   // Used by the Refresh button and by the timer every REFRESH_SECONDS.
+  // The online copy on GitHub Pages has no real data (it stays on the sending computer),
+  // so there it shows the made-up entries in sample_log_data.js instead.
   const REFRESH_SECONDS = 5;
+  const DEMO = location.hostname.endsWith("github.io");
+  const DATA_FILE = DEMO ? "sample_log_data.js" : "sent_log_data.js";
+  if (DEMO) document.getElementById("demo").hidden = false;
   let loadingSince = 0;
 
   function load() {
@@ -155,13 +162,13 @@
 
     const script = document.createElement("script");
     script.id = "sent-log-data";
-    script.src = "sent_log_data.js?t=" + Date.now();  // avoid a cached copy
+    script.src = DATA_FILE + "?t=" + Date.now();  // avoid a cached copy
     script.onload = () => {
       loadingSince = 0;
       markUpdated();
       if (!Array.isArray(window.sentLogData)) {
         sub.textContent = today;
-        showMessage("sent_log_data.js doesn't contain a list of messages.", true);
+        showMessage(DATA_FILE + " doesn't contain a list of messages.", true);
         return;
       }
       render(window.sentLogData, today);
