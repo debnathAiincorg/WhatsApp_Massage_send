@@ -10,6 +10,7 @@
     --green-bg: #dcf5e3; --green: #146c2e;
     --red-bg: #fde2e1; --red: #a4161a;
     --gray-bg: #eceef1; --gray: #4b525a;
+    --amber-bg: #fff4d6; --amber: #7a4d00;
     --accent: #1a7f37;
   }
   @media (prefers-color-scheme: dark) {
@@ -18,6 +19,7 @@
       --green-bg: #173d24; --green: #7ee2a0;
       --red-bg: #4a1c1d; --red: #ffaaa8;
       --gray-bg: #2a3038; --gray: #c3c9d0;
+      --amber-bg: #3d2e0a; --amber: #f5c86a;
       --accent: #2ea043;
     }
   }
@@ -45,11 +47,43 @@
   tr:last-child td { border-bottom: 0; }
   td.name { white-space: normal; }
   .status { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; }
-  .status.sent { background: var(--green-bg); color: var(--green); }
+  .status.good { background: var(--green-bg); color: var(--green); }
   .status.failed { background: var(--red-bg); color: var(--red); }
   .status.other { background: var(--gray-bg); color: var(--gray); }
+  .status.check { background: var(--amber-bg); color: var(--amber); }
+  .status-note.action { color: var(--amber); font-weight: 600; }
+  td.status-cell { white-space: normal; min-width: 180px; }
+  .status-note { font-size: 12px; color: var(--muted); margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .status-note.error { color: var(--red); }
+  .legend { margin: 10px 2px 0; font-size: 13px; color: var(--muted); display: grid; gap: 6px; }
+  .legend-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .legend-row .status { font-size: 12px; }
+  .legend-row .status + span:not(.status) { margin-left: 4px; }
+  .error-legend { display: grid; gap: 6px; }
+  .error-legend[hidden] { display: none; }
+  .error-legend .legend-row { flex-wrap: nowrap; align-items: flex-start; }
+  .error-legend .status { flex-shrink: 0; white-space: nowrap; }
   .message { padding: 32px 16px; text-align: center; color: var(--muted); }
   .message.error { color: var(--red); text-align: left; }
+  h2 { font-size: 16px; margin: 0 0 10px; }
+  .summary { margin-bottom: 24px; }
+  .summary-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .summary-head .when { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .tile .num { font-size: 28px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .tile .label { font-size: 13px; color: var(--muted); }
+  .tile.good { border-left-color: var(--green); }
+  .tile.good .num { color: var(--green); }
+  .tile.warn { border-left-color: var(--amber); }
+  .tile.warn .num { color: var(--amber); }
+  .tile.bad { border-left-color: var(--red); }
+  .tile.bad .num { color: var(--red); }
+  .details { margin: 10px 0 0; padding: 10px 14px; border-radius: 10px; font-size: 14px; }
+  .details.warn { background: var(--amber-bg); color: var(--amber); }
+  .details.bad { background: var(--red-bg); color: var(--red); }
+  .details strong { display: block; margin-bottom: 4px; }
+  .details ul { margin: 0; padding-left: 20px; }
 </style>
 </head>
 <body>
@@ -62,7 +96,20 @@
     </div>
   </header>
   <p class="sub" id="sub">Loading…</p>
+  <section class="summary" id="summary" hidden></section>
+  <h2>Messages</h2>
   <div class="card" id="out"></div>
+  <div class="legend">
+    <div class="legend-row"><span class="status other">sent</span>
+      <span>WhatsApp accepted it, no delivery report yet (retried once after 2 hours)</span></div>
+    <div class="legend-row"><span class="status good">delivered</span><span class="status good">read</span>
+      <span>confirmed on the customer's phone</span></div>
+    <div class="legend-row"><span class="status check">unconfirmed</span><span class="status check">pending</span>
+      <span>no confirmation after 2 tries, or a run stopped mid-send: check manually, never resent automatically</span></div>
+    <div class="legend-row"><span class="status failed">failed</span>
+      <span>Meta dropped it, with the error code (meaning below): check manually, never resent automatically</span></div>
+    <div id="error-legend" class="error-legend" hidden></div>
+  </div>
 </main>
 
 <script>
@@ -70,6 +117,39 @@
   const sub = document.getElementById("sub");
   const button = document.getElementById("refresh");
   const updated = document.getElementById("updated");
+  const summary = document.getElementById("summary");
+
+  // WhatsApp error codes in plain language, shown in the legend below the table for each code
+  // that appears in today's messages. To add one: a new line `code: "what it means",`.
+  const ERROR_CODES = {
+    131049: "Meta is limiting marketing messages to that customer's number (shared across all businesses, not just ours). Wait a day or more before retrying - this isn't a code or account problem.",
+    131026: "Couldn't be delivered: the number may not be on WhatsApp, or the customer hasn't accepted WhatsApp's latest terms.",
+    131047: "The customer hasn't messaged us in the last 24 hours, so only an approved template can be sent.",
+    131030: "This number isn't on the test list. Add it in the Meta app (WhatsApp > API Setup), or take the app out of test mode.",
+    131031: "Our WhatsApp Business account is locked or restricted. Check WhatsApp Manager.",
+    131050: "The customer has chosen not to receive marketing messages from us.",
+    131021: "The customer's number is the same as ours.",
+    130429: "Too many messages sent too quickly. It will work if tried again later.",
+    132001: "The message template wasn't found or isn't approved yet. Check it in WhatsApp Manager.",
+    132015: "The message template is paused for low quality. Check it in WhatsApp Manager.",
+    132016: "The message template is disabled. Check it in WhatsApp Manager.",
+    190: "Our access token has expired. Generate a new one and update .env.",
+  };
+
+  const errorLegend = document.getElementById("error-legend");
+
+  // One legend line per error code in today's messages or the last run summary, in the same
+  // style as the status lines above it. A code not in ERROR_CODES says so.
+  function renderErrorLegend(codes) {
+    const unique = [...new Set(codes.filter(c => c !== undefined && c !== null && c !== "").map(String))].sort();
+    errorLegend.replaceChildren(...unique.map(code => {
+      const row = el("div", undefined, "legend-row");
+      row.append(el("span", `Error ${code}`, "status failed"),
+                 el("span", ERROR_CODES[code] || "Meta error code; no explanation added yet (add it to ERROR_CODES in dashboard.html)."));
+      return row;
+    }));
+    errorLegend.hidden = !unique.length;
+  }
 
   // Local date as YYYY-MM-DD, the same format (and timezone) the Python script writes.
   function todayString() {
@@ -99,9 +179,12 @@
 
   function render(entries, today) {
     const rows = entries.filter(e => e && e.date === today);
-    const sent = rows.filter(e => e.status === "sent").length;
+    const count = kind => rows.filter(e => statusKind(e.status) === kind).length;
+    const parts = [[count("good"), "delivered"], [count("failed"), "failed"], [count("check"), "need a manual check"],
+                   [count("other"), "awaiting delivery report"]]
+      .filter(([n]) => n).map(([n, label]) => `${n} ${label}`);
     sub.textContent = `${today} · ${rows.length} message${rows.length === 1 ? "" : "s"}` +
-      (rows.length ? ` (${sent} sent)` : "");
+      (parts.length ? ` (${parts.join(", ")})` : "");
 
     if (!rows.length) {
       showMessage("No messages sent yet today");
@@ -118,17 +201,105 @@
     rows.sort((a, b) => String(a.sent_at).localeCompare(String(b.sent_at)));
     for (const e of rows) {
       const status = String(e.status || "unknown");
-      const kind = status === "sent" ? "sent" : status === "failed" ? "failed" : "other";
-      const occasion = e.occasion ? e.occasion[0].toUpperCase() + e.occasion.slice(1) : "";
+      const occasion = occasionLabel(e.occasion);
       const tr = el("tr");
       tr.append(el("td", e.name || "", "name"), el("td", occasion), el("td", formatPhone(e.phone)));
-      const statusCell = el("td");
-      statusCell.append(el("span", status, "status " + kind));
-      tr.append(statusCell, el("td", formatTime(e.sent_at)));
+      tr.append(statusCell(e, status), el("td", formatTime(e.sent_at)));
       body.append(tr);
     }
     table.append(body);
     out.replaceChildren(table);
+  }
+
+  // green: confirmed on the phone; red: dropped; amber: needs a manual check;
+  // grey: accepted, no report yet.
+  function statusKind(status) {
+    if (status === "delivered" || status === "read") return "good";
+    if (status === "failed") return "failed";
+    if (status === "unconfirmed" || status === "pending") return "check";
+    return "other";
+  }
+
+  function statusCell(e, status) {
+    const cell = el("td", undefined, "status-cell");
+    const failedText = e.error_code ? `Failed · Error ${e.error_code}` : "Failed";
+    const badge = el("span", status === "failed" ? failedText : status, "status " + statusKind(status));
+    cell.append(badge);
+    const tries = Number(e.attempts) || 1;
+    if (status === "failed") {
+      // One line only; the code's meaning is in the legend below the table.
+      badge.title = [e.error_title, e.error_details].filter(Boolean).join(" - ");
+    } else if (status === "delivered" || status === "read") {
+      if (e.status_at) cell.append(el("div", `${status} ${formatTime(e.status_at)}`, "status-note"));
+    } else if (status === "unconfirmed") {
+      cell.append(el("div", `Not confirmed after ${tries} tries - check manually`, "status-note action"));
+    } else if (status === "pending") {
+      cell.append(el("div", "A run stopped while sending it; it may have gone out - check manually", "status-note action"));
+    } else if (status === "sent") {
+      badge.title = "Accepted by WhatsApp; no delivery report received yet";
+      if (tries > 1) cell.append(el("div", `Try ${tries} of 2`, "status-note"));
+    }
+    return cell;
+  }
+
+  function occasionLabel(occasion) {
+    return occasion ? occasion[0].toUpperCase() + occasion.slice(1) : "";
+  }
+
+  function tile(count, label, tone) {
+    const node = el("div", undefined, "tile " + (count > 0 ? tone : ""));
+    node.append(el("div", String(count), "num"), el("div", label, "label"));
+    return node;
+  }
+
+  function detailList(title, items, tone, describe) {
+    const box = el("div", undefined, "details " + tone);
+    const list = el("ul");
+    for (const item of items) list.append(el("li", describe(item)));
+    box.append(el("strong", title), list);
+    return box;
+  }
+
+  // The SUMMARY block send_whatsapp.py prints, from run_summary_data.js (window.runSummaryData).
+  // It describes the most recent real run only, so it is hidden unless that run was today.
+  function renderSummary(s, today) {
+    if (!s || typeof s !== "object" || s.date !== today) {
+      summary.hidden = true;
+      return;
+    }
+    const list = v => Array.isArray(v) ? v : [];
+    const noPhone = list(s.skipped_no_phone), duplicate = list(s.skipped_duplicate), failed = list(s.failed);
+    const waiting = list(s.waiting), check = list(s.needs_check);
+    const who = x => `${x.name || "(no name)"} ${formatPhone(x.phone)} (${occasionLabel(x.occasion)})`;
+    const birthday = Number(s.birthday_sent) || 0, anniversary = Number(s.anniversary_sent) || 0;
+
+    const head = el("div", undefined, "summary-head");
+    head.append(el("h2", "Last run summary"), el("span", "Finished " + formatTime(s.finished_at), "when"));
+
+    const tiles = el("div", undefined, "tiles");
+    tiles.append(
+      tile(birthday, "Birthday messages sent", "good"),
+      tile(anniversary, "Anniversary messages sent", "good"),
+      tile(noPhone.length, "Skipped (no phone number)", "warn"),
+      tile(duplicate.length, "Skipped (already delivered today)", "warn"),
+      tile(failed.length, "Failed", "bad"),
+    );
+
+    const parts = [head, tiles];
+    if (noPhone.length) {
+      parts.push(detailList("Skipped - no phone number", noPhone, "warn",
+        x => `${x.name || "(no name)"} (${occasionLabel(x.occasion)}, ${x.where}): ${x.reason}`));
+    }
+    if (check.length) {
+      parts.push(detailList("Needs a manual check (not resent automatically)", check, "bad",
+        x => `${who(x)}: ${x.status}${x.error_code ? ` · error ${x.error_code}` : ""}` +
+             (x.status === "failed" ? "" : ` - ${x.reason}`)));
+    }
+    if (waiting.length) {
+      parts.push(detailList("Waiting for delivery report", waiting, "warn", x => `${who(x)}: ${x.reason}`));
+    }
+    summary.replaceChildren(...parts);
+    summary.hidden = false;
   }
 
   function markUpdated() {
@@ -138,42 +309,66 @@
     updated.classList.add("flash");
   }
 
-  // sent_log_data.js (written by send_whatsapp.py next to sent_log.json) sets window.sentLogData.
+  // sent_log_data.js (written by send_whatsapp.py next to sent_log.json) sets window.sentLogData,
+  // and run_summary_data.js (written at the end of each real run) sets window.runSummaryData.
   // It's loaded with a <script> tag, which browsers allow on file:// pages, unlike fetch().
-  // Each load swaps in a fresh tag with a new ?t= so the browser can't reuse a cached copy.
+  // Each load swaps in fresh tags with a new ?t= so the browser can't reuse a cached copy.
   // Used by the Refresh button and by the timer every REFRESH_SECONDS.
   const REFRESH_SECONDS = 5;
   let loadingSince = 0;
 
-  function load() {
+  // Resolves true if the file loaded, false if it's missing (not written yet).
+  function loadScript(id, src) {
+    const old = document.getElementById(id);
+    if (old) old.remove();
+    return new Promise(resolve => {
+      const script = document.createElement("script");
+      script.id = id;
+      script.src = src + "?t=" + Date.now();  // avoid a cached copy
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.append(script);
+    });
+  }
+
+  async function load() {
     if (loadingSince && Date.now() - loadingSince < 15000) return;  // previous load still running
     loadingSince = Date.now();
     const today = todayString();
-    const old = document.getElementById("sent-log-data");
-    if (old) old.remove();
     window.sentLogData = undefined;
+    window.runSummaryData = undefined;
 
-    const script = document.createElement("script");
-    script.id = "sent-log-data";
-    script.src = "sent_log_data.js?t=" + Date.now();  // avoid a cached copy
-    script.onload = () => {
-      loadingSince = 0;
-      markUpdated();
-      if (!Array.isArray(window.sentLogData)) {
-        sub.textContent = today;
-        showMessage("sent_log_data.js doesn't contain a list of messages.", true);
-        return;
-      }
-      render(window.sentLogData, today);
-    };
-    script.onerror = () => {
+    // run_summary_data.js is written at the end of each real run, so it's missing until the first one.
+    const [logFound] = await Promise.all([
+      loadScript("sent-log-data", "sent_log_data.js"),
+      loadScript("run-summary-data", "run_summary_data.js"),
+    ]);
+    loadingSince = 0;
+    markUpdated();
+    renderSummary(window.runSummaryData, today);
+
+    // Error codes for the legend: today's messages plus the last run's summary (API refusals
+    // never reach the log).
+    const s = window.runSummaryData;
+    const codes = [];
+    if (Array.isArray(window.sentLogData)) {
+      window.sentLogData.filter(e => e && e.date === today && e.status === "failed").forEach(e => codes.push(e.error_code));
+    }
+    if (s && s.date === today) {
+      [s.failed, s.needs_check].forEach(list => Array.isArray(list) && list.forEach(x => codes.push(x.error_code)));
+    }
+    renderErrorLegend(codes);
+
+    if (!logFound) {
       // The file is created on the first send, so a missing file just means nothing sent yet.
-      loadingSince = 0;
-      markUpdated();
       sub.textContent = today;
       showMessage("No messages sent yet today");
-    };
-    document.body.append(script);
+    } else if (!Array.isArray(window.sentLogData)) {
+      sub.textContent = today;
+      showMessage("sent_log_data.js doesn't contain a list of messages.", true);
+    } else {
+      render(window.sentLogData, today);
+    }
   }
 
   button.addEventListener("click", load);

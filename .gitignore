@@ -7,3 +7,9 @@ sent_log_data.js
 sent_log_data.tmp
 Salon Customers Database.xlsx
 ~$*.xlsx
+run_summary_data.js
+run_summary_data.tmp
+sent_log.lock
+webhook.log*
+ngrok.log
+webhook_events.jsonl*
